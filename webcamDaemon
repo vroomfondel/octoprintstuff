@@ -1,0 +1,6 @@
+#!/bin/bash
+
+python3 /home/pi/mjpeg_server_with_capture.py
+
+exit $?
+
