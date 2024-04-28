@@ -5,18 +5,29 @@
 # ESPECIALLY ON https://github.com/raspberrypi/picamera2/blob/main/examples/mjpeg_server_2.py
 # IN CONJUNCTION WITH https://github.com/raspberrypi/picamera2/blob/main/examples/still_during_video.py
 
+# DATASHEET: https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf
+
+import sys
 import io
+import json
 import logging
 import socketserver
 from http import server
 from threading import Condition
 
 from picamera2 import Picamera2
-from picamera2.encoders import MJPEGEncoder
+from picamera2.encoders import MJPEGEncoder, Quality
 from picamera2.outputs import FileOutput
 
-WIDTH: int = 640  #1920  #1296
-HEIGHT: int = 480  #1080  #972
+# https://www.libcamera.org/getting-started.html
+import libcamera
+
+NRM: libcamera.controls.draft.NoiseReductionModeEnum = libcamera.controls.draft.NoiseReductionModeEnum.Fast  # libcamera.controls.draft.NoiseReductionModeEnum.HighQuality  # libcamera.controls.draft.NoiseReductionModeEnum.Fast  # .Minimal ?!
+ENCQ: Quality = Quality.HIGH
+WIDTH: int = 960  #640  #1920  #1296  # 960
+HEIGHT: int = 720  #480  #1080  #972  # 720
+FRAMERATE: int = 10
+BUFFER_COUNT: int = 6  # DEFAULT: 6
 
 
 PAGE = f"""\
@@ -110,9 +121,65 @@ class StreamingServer(socketserver.ThreadingMixIn, server.HTTPServer):
 
 
 picam2 = Picamera2()
-picam2.configure(picam2.create_video_configuration(main={"size": (WIDTH, HEIGHT)}))
+
+# tuning = Picamera2.load_tuning_file("imx477_noir.json")
+# picam2 = Picamera2(tuning=tuning)
+#
+# config = picam2.create_still_configuration(raw={'format': 'SBGGR12', 'size': (4056, 3040)})
+# picam2.configure(config)
+# print('Sensor configuration:', picam2.camera_configuration()['sensor'])
+# print('Stream Configuration:', picam2.camera_configuration()['raw'])
+
+#  Transform(hflip=True, vflip=True)
+
+video_conf: dict = picam2.create_video_configuration(
+    main={"size": (WIDTH, HEIGHT)},
+    controls={"FrameRate": FRAMERATE, "NoiseReductionMode": NRM},
+    buffer_count=BUFFER_COUNT
+)
+
+
+
+from uuid import UUID
+from datetime import date
+from datetime import timedelta
+from datetime import datetime
+
+class ComplexEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if hasattr(obj, 'reprJSON'):
+            return obj.reprJSON()
+        elif type(obj) == UUID:
+            obj: UUID
+            return str(obj)
+        elif type(obj) == datetime:
+            obj: datetime
+            return obj.strftime("%Y-%m-%d %H:%M:%S %Z")
+        elif type(obj) == date:
+            obj: date
+            return obj.strftime("%Y-%m-%d")
+        elif type(obj) == timedelta:
+            obj: timedelta
+            return str(obj)
+        else:
+            return json.JSONEncoder.default(self, obj)
+
+
+print("VIDEO_CONF:", flush=True)
+print(json.dumps(video_conf, indent=4, sort_keys=True, cls=ComplexEncoder, default=str), flush=True)
+
+
+picam2.align_configuration(video_conf)
+
+
+print("VIDEO_CONF_AFTER_ALIGNMENT:", flush=True)
+print(json.dumps(video_conf, indent=4, sort_keys=True, cls=ComplexEncoder, default=str), flush=True)
+
+
+
+picam2.configure(video_conf)
 output = StreamingOutput()
-picam2.start_recording(MJPEGEncoder(), FileOutput(output))
+picam2.start_recording(MJPEGEncoder(), FileOutput(output), quality=ENCQ)
 
 try:
     address = ('', 8000)
