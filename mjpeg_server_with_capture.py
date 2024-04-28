@@ -14,20 +14,71 @@ import logging
 import socketserver
 from http import server
 from threading import Condition
+from typing import Tuple
 
-from picamera2 import Picamera2
+from picamera2 import Picamera2, MappedArray
 from picamera2.encoders import MJPEGEncoder, Quality
 from picamera2.outputs import FileOutput
+
+import time
+
+INSTALL_CV2_IF_MISSING: bool = True
+
+try:
+    import cv2
+except Exception as cv2ex:
+    print(str(cv2ex), flush=True)
+
+    if INSTALL_CV2_IF_MISSING:
+        try:
+            print("TRYING TO INSTALL VIA PIP INTERNALLY...", flush=True)
+
+            import pip
+
+            if hasattr(pip, 'main'):
+                #pip.main(['install', "--break-system-packages", "opencv-python"])
+                pip.main(['install', "opencv-python"])
+            else:
+                # pip._internal.main(['install', "--break-system-packages", "opencv-python"])
+                pip._internal.main(['install', "--break-system-packages", "opencv-python"])
+
+            import cv2
+        except Exception as intpip:
+            print(str(intpip), flush=True)
+
+            print("TRYING TO INSTALL VIA 'sudo apt'...", flush=True)
+
+            import subprocess
+            subprocess.check_call(["sudo", "apt", "-y", "install", "python3-opencv"])
+
+            import cv2
+
+
+
+
 
 # https://www.libcamera.org/getting-started.html
 import libcamera
 
-NRM: libcamera.controls.draft.NoiseReductionModeEnum = libcamera.controls.draft.NoiseReductionModeEnum.Fast  # libcamera.controls.draft.NoiseReductionModeEnum.HighQuality  # libcamera.controls.draft.NoiseReductionModeEnum.Fast  # .Minimal ?!
+NRM: libcamera.controls.draft.NoiseReductionModeEnum = libcamera.controls.draft.NoiseReductionModeEnum.HighQuality  # libcamera.controls.draft.NoiseReductionModeEnum.HighQuality  # libcamera.controls.draft.NoiseReductionModeEnum.Fast  # .Minimal ?!
 ENCQ: Quality = Quality.HIGH
 WIDTH: int = 960  #640  #1920  #1296  # 960
 HEIGHT: int = 720  #480  #1080  #972  # 720
-FRAMERATE: int = 10
+FRAMERATE: int = 7
 BUFFER_COUNT: int = 6  # DEFAULT: 6
+
+
+TIMESTAMP_TEXT_COLOUR: Tuple[int, int, int] = (0, 255, 0)
+TIMESTAMP_TEXT_ORIGIN: Tuple[int, int] = (0, 30)
+TIMESTAMP_TEXT_FONT = cv2.FONT_HERSHEY_SIMPLEX
+TIMESTAMP_TEXT_SCALE: int = 1
+TIMESTAMP_TEXT_THICKNESS = 2
+
+def apply_timestamp(request):
+  timestamp = time.strftime("%Y-%m-%d %X")
+  with MappedArray(request, "main") as m:
+    cv2.putText(m.array, timestamp, TIMESTAMP_TEXT_ORIGIN, TIMESTAMP_TEXT_FONT, TIMESTAMP_TEXT_SCALE, TIMESTAMP_TEXT_COLOUR, TIMESTAMP_TEXT_THICKNESS)
+
 
 
 PAGE = f"""\
@@ -178,6 +229,8 @@ print(json.dumps(video_conf, indent=4, sort_keys=True, cls=ComplexEncoder, defau
 
 
 picam2.configure(video_conf)
+picam2.pre_callback = apply_timestamp
+
 output = StreamingOutput()
 picam2.start_recording(MJPEGEncoder(), FileOutput(output), quality=ENCQ)
 

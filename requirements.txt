@@ -1,1 +1,2 @@
 picamera2
+opencv-python
