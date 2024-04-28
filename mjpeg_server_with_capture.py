@@ -14,7 +14,7 @@ import logging
 import socketserver
 from http import server
 from threading import Condition
-from typing import Tuple
+from typing import Tuple, Any
 
 from picamera2 import Picamera2, MappedArray
 from picamera2.encoders import MJPEGEncoder, Quality
@@ -59,13 +59,17 @@ except Exception as cv2ex:
 
 # https://www.libcamera.org/getting-started.html
 import libcamera
+from libcamera import ColorSpace
+
+# yep, US+EN
+COLOUR_SPACE: Any = ColorSpace.Sycc()  # Smpte170m  # Rec709 #Sycc()
 
 NRM: libcamera.controls.draft.NoiseReductionModeEnum = libcamera.controls.draft.NoiseReductionModeEnum.HighQuality  # libcamera.controls.draft.NoiseReductionModeEnum.HighQuality  # libcamera.controls.draft.NoiseReductionModeEnum.Fast  # .Minimal ?!
 ENCQ: Quality = Quality.HIGH
 WIDTH: int = 960  #640  #1920  #1296  # 960
 HEIGHT: int = 720  #480  #1080  #972  # 720
 FRAMERATE: int = 7
-BUFFER_COUNT: int = 6  # DEFAULT: 6
+BUFFER_COUNT: int = 3  # DEFAULT: 6
 
 
 TIMESTAMP_TEXT_COLOUR: Tuple[int, int, int] = (0, 255, 0)
@@ -171,7 +175,7 @@ class StreamingServer(socketserver.ThreadingMixIn, server.HTTPServer):
     daemon_threads = True
 
 
-picam2 = Picamera2()
+picam2: Picamera2 = Picamera2()
 
 # tuning = Picamera2.load_tuning_file("imx477_noir.json")
 # picam2 = Picamera2(tuning=tuning)
@@ -186,7 +190,8 @@ picam2 = Picamera2()
 video_conf: dict = picam2.create_video_configuration(
     main={"size": (WIDTH, HEIGHT)},
     controls={"FrameRate": FRAMERATE, "NoiseReductionMode": NRM},
-    buffer_count=BUFFER_COUNT
+    buffer_count=BUFFER_COUNT,
+    colour_space=COLOUR_SPACE
 )
 
 
